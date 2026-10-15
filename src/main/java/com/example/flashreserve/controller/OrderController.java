@@ -38,5 +38,13 @@ public class OrderController {
 
         return ResponseEntity.ok(response);
     }
+    @GetMapping("/{orderId}")
+    public ResponseEntity<OrderResponse> getOrderById(
+            @PathVariable Long orderId) {
+
+        return ResponseEntity.ok(
+                orderService.getOrderById(orderId)
+        );
+    }
 }
 

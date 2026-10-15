@@ -5,6 +5,7 @@ import com.example.flashreserve.dto.ProductResponse;
 import com.example.flashreserve.entity.Inventory;
 import com.example.flashreserve.entity.Product;
 import com.example.flashreserve.exception.InsufficientInventoryException;
+import com.example.flashreserve.exception.ProductNotFoundException;
 import com.example.flashreserve.repository.InventoryRepository;
 import com.example.flashreserve.repository.ProductRepository;
 import com.example.flashreserve.repository.ProductSpecifications;
@@ -22,11 +23,14 @@ public class ProductService {
 
     private final ProductRepository productRepository;
     private final InventoryRepository inventoryRepository;
+    private final ProductDetailsCacheService productDetailsCacheService;
 
     public ProductService(ProductRepository productRepository,
-                          InventoryRepository inventoryRepository) {
+                          InventoryRepository inventoryRepository,
+                          ProductDetailsCacheService productDetailsCacheService) {
         this.productRepository = productRepository;
         this.inventoryRepository = inventoryRepository;
+        this.productDetailsCacheService = productDetailsCacheService;
     }
 
     @Transactional
@@ -72,6 +76,22 @@ public class ProductService {
                         product.getInventory().getAvailableQuantity()
                 ));
     }
+
+    @Transactional(readOnly = true)
+    public ProductResponse getProductById(Long productId) {
+        var details = productDetailsCacheService.getProductDetails(productId);
+
+        Inventory inventory = inventoryRepository.findByProduct_Id(productId)
+                .orElseThrow(ProductNotFoundException::new);
+
+        return new ProductResponse(
+                details.id(),
+                details.name(),
+                details.price(),
+                inventory.getAvailableQuantity()
+        );
+    }
+
     @Transactional(readOnly = true)
     public Page<ProductResponse> searchProducts(
             String search,

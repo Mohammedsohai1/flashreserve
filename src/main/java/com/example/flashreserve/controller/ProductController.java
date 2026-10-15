@@ -133,4 +133,14 @@ public class ProductController {
                 )
         );
     }
+
+    @GetMapping("/{productId}")
+    public ResponseEntity<ProductResponse> getProductById(
+            @PathVariable Long productId) {
+
+        return ResponseEntity.ok(
+                productService.getProductById(productId)
+        );
+    }
+
 }

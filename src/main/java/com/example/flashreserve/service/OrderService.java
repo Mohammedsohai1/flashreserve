@@ -145,4 +145,11 @@ public class OrderService {
                itemResponses
         );
     }
+    @Transactional(readOnly = true)
+    public OrderResponse getOrderById(Long orderId) {
+        Order order = orderRepository.findById(orderId)
+                .orElseThrow(OrderNotFoundException::new);
+
+        return toOrderResponse(order);
+    }
 }

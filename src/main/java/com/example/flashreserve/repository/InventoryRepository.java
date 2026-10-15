@@ -6,6 +6,8 @@ import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.util.Optional;
+
 public interface InventoryRepository extends JpaRepository<Inventory,Long> {
     @Modifying
     @Query("""
@@ -27,5 +29,6 @@ WHERE i.product.id=:productId AND i.availableQuantity>=:quantity
             @Param("productId") Long productId,
             @Param("quantity") int quantity
     );
+    Optional<Inventory> findByProduct_Id(Long productId);
 }
 
