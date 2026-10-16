@@ -2,6 +2,7 @@ package com.example.flashreserve.dto;
 
 import jakarta.validation.constraints.NotNull;
 
+import java.io.Serializable;
 import java.math.BigDecimal;
 
 public record ProductResponse (
@@ -10,5 +11,5 @@ public record ProductResponse (
         BigDecimal price,
         Integer availableQuantity
 
-){
+)implements Serializable {
 }

@@ -12,8 +12,14 @@ import com.example.flashreserve.repository.IdempotencyRepository;
 import com.example.flashreserve.repository.InventoryRepository;
 import com.example.flashreserve.repository.OrderRepository;
 import com.example.flashreserve.repository.ProductRepository;
+import jakarta.persistence.EntityManagerFactory;
+import org.springframework.cache.Cache;
+import org.springframework.cache.CacheManager;
+import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -26,6 +32,7 @@ public class OrderService {
     private final InventoryRepository inventoryRepository;
     private final ProductRepository productRepository;
     private final ProductService productService;
+    private final CacheManager cacheManager;
     private final IdempotencyRepository idempotencyRepository;
     private final IdempotencyFingerprintService idempotencyFingerprintService;
 
@@ -35,13 +42,14 @@ public class OrderService {
             ProductService productService,
             IdempotencyRepository idempotencyRepository,
             IdempotencyFingerprintService idempotencyFingerprintService,
-             InventoryRepository inventoryRepository) {
+            InventoryRepository inventoryRepository, CacheManager cacheManager) {
         this.orderRepository = orderRepository;
         this.productRepository = productRepository;
         this.productService = productService;
         this.idempotencyRepository=idempotencyRepository;
         this.idempotencyFingerprintService=idempotencyFingerprintService;
         this.inventoryRepository=inventoryRepository;
+        this.cacheManager = cacheManager;
     }
 
     @Transactional
@@ -97,6 +105,7 @@ public class OrderService {
         );
 
         idempotencyRepository.save(savedKey);
+        evictProductSearchCacheAfterCommit();
         return toOrderResponse(savedOrder);
     }
     @Transactional
@@ -124,7 +133,7 @@ public class OrderService {
         }
 
         order.setStatus(OrderStatus.CANCELLED);
-
+        evictProductSearchCacheAfterCommit();
         return toOrderResponse(order);
     }
 
@@ -151,5 +160,25 @@ public class OrderService {
                 .orElseThrow(OrderNotFoundException::new);
 
         return toOrderResponse(order);
+    }
+    private void evictProductSearchCacheAfterCommit() {
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(
+                    new TransactionSynchronization() {
+                        @Override
+                        public void afterCommit() {
+                            Cache cache = cacheManager.getCache("productSearch");
+                            if (cache != null) {
+                                cache.clear();
+                            }
+                        }
+                    }
+            );
+        } else {
+            Cache cache = cacheManager.getCache("productSearch");
+            if (cache != null) {
+                cache.clear();
+            }
+        }
     }
 }

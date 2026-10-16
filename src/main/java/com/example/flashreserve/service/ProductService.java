@@ -9,11 +9,18 @@ import com.example.flashreserve.exception.ProductNotFoundException;
 import com.example.flashreserve.repository.InventoryRepository;
 import com.example.flashreserve.repository.ProductRepository;
 import com.example.flashreserve.repository.ProductSpecifications;
+import org.springframework.cache.Cache;
+import org.springframework.cache.CacheManager;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
+
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -23,16 +30,19 @@ public class ProductService {
 
     private final ProductRepository productRepository;
     private final InventoryRepository inventoryRepository;
+    private final CacheManager cacheManager;
     private final ProductDetailsCacheService productDetailsCacheService;
 
     public ProductService(ProductRepository productRepository,
-                          InventoryRepository inventoryRepository,
+                          InventoryRepository inventoryRepository, CacheManager cacheManager,
                           ProductDetailsCacheService productDetailsCacheService) {
         this.productRepository = productRepository;
         this.inventoryRepository = inventoryRepository;
+        this.cacheManager = cacheManager;
         this.productDetailsCacheService = productDetailsCacheService;
     }
 
+    @CacheEvict(cacheNames = "productSearch", allEntries = true)
     @Transactional
     public ProductResponse createProduct(CreateProductRequest request) {
 
@@ -50,7 +60,7 @@ public class ProductService {
         Inventory savedInventory = inventoryRepository.save(inventory);
 
         savedProduct.setInventory(savedInventory);
-
+        evictProductSearchCacheAfterCommit();
         return new ProductResponse(
                 savedProduct.getId(),
                 savedProduct.
@@ -59,13 +69,38 @@ public class ProductService {
                 savedInventory.getAvailableQuantity()
         );
     }
+
+    @CacheEvict(cacheNames = "productSearch", allEntries = true)
     @Transactional
     public void reserve(Long productId, int quantity){
         int updatedRows=inventoryRepository.decreaseQuantity(productId,quantity);
         if(updatedRows==0){
             throw new InsufficientInventoryException();
         }
+        evictProductSearchCacheAfterCommit();
     }
+
+    private void evictProductSearchCacheAfterCommit() {
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(
+                    new TransactionSynchronization() {
+                        @Override
+                        public void afterCommit() {
+                            Cache cache = cacheManager.getCache("productSearch");
+                            if (cache != null) {
+                                cache.clear();
+                            }
+                        }
+                    }
+            );
+        } else {
+            Cache cache = cacheManager.getCache("productSearch");
+            if (cache != null) {
+                cache.clear();
+            }
+        }
+    }
+
     @Transactional(readOnly = true)
     public Page<ProductResponse> getProducts(Pageable pageable) {
         return productRepository.findAll(pageable)
@@ -93,6 +128,16 @@ public class ProductService {
     }
 
     @Transactional(readOnly = true)
+    @Cacheable(
+            cacheNames = "productSearch",
+            key = "T(java.util.Objects).toString(#search) + ':' + " +
+                    "T(java.util.Objects).toString(#minPrice) + ':' + " +
+                    "T(java.util.Objects).toString(#maxPrice) + ':' + " +
+                    "T(java.util.Objects).toString(#inStock) + ':' + " +
+                    "#pageable.pageNumber + ':' + " +
+                    "#pageable.pageSize + ':' + " +
+                    "#pageable.sort.toString()"
+    )
     public Page<ProductResponse> searchProducts(
             String search,
             BigDecimal minPrice,

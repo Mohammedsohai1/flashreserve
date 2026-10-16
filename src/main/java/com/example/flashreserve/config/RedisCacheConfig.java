@@ -1,6 +1,7 @@
 package com.example.flashreserve.config;
 
 import java.time.Duration;
+import java.util.Map;
 
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -15,13 +16,19 @@ public class RedisCacheConfig {
     public RedisCacheManager cacheManager(
             RedisConnectionFactory connectionFactory) {
 
-        RedisCacheConfiguration configuration =
+        RedisCacheConfiguration defaults =
                 RedisCacheConfiguration.defaultCacheConfig()
                         .entryTtl(Duration.ofMinutes(10))
                         .disableCachingNullValues();
 
+        RedisCacheConfiguration searchCache =
+                defaults.entryTtl(Duration.ofSeconds(15));
+
         return RedisCacheManager.builder(connectionFactory)
-                .cacheDefaults(configuration)
+                .cacheDefaults(defaults)
+                .withInitialCacheConfigurations(Map.of(
+                        "productSearch", searchCache
+                ))
                 .build();
     }
 }
