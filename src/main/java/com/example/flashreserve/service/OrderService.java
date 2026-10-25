@@ -4,6 +4,8 @@ import com.example.flashreserve.dto.CreateOrderRequest;
 import com.example.flashreserve.dto.OrderItemResponse;
 import com.example.flashreserve.dto.OrderResponse;
 import com.example.flashreserve.entity.*;
+import com.example.flashreserve.event.OrderCreatedEvent;
+import com.example.flashreserve.event.OrderEventPublisher;
 import com.example.flashreserve.exception.IdempotencyKeyReusedException;
 import com.example.flashreserve.exception.OrderAlreadyCancelledException;
 import com.example.flashreserve.exception.OrderNotFoundException;
@@ -35,6 +37,7 @@ public class OrderService {
     private final CacheManager cacheManager;
     private final IdempotencyRepository idempotencyRepository;
     private final IdempotencyFingerprintService idempotencyFingerprintService;
+    private final OrderEventPublisher orderEventPublisher;
 
     public OrderService(
             OrderRepository orderRepository,
@@ -42,7 +45,7 @@ public class OrderService {
             ProductService productService,
             IdempotencyRepository idempotencyRepository,
             IdempotencyFingerprintService idempotencyFingerprintService,
-            InventoryRepository inventoryRepository, CacheManager cacheManager) {
+            InventoryRepository inventoryRepository, CacheManager cacheManager, OrderEventPublisher orderEventPublisher) {
         this.orderRepository = orderRepository;
         this.productRepository = productRepository;
         this.productService = productService;
@@ -50,6 +53,7 @@ public class OrderService {
         this.idempotencyFingerprintService=idempotencyFingerprintService;
         this.inventoryRepository=inventoryRepository;
         this.cacheManager = cacheManager;
+        this.orderEventPublisher = orderEventPublisher;
     }
 
     @Transactional
@@ -105,6 +109,15 @@ public class OrderService {
         );
 
         idempotencyRepository.save(savedKey);
+        OrderCreatedEvent event = new OrderCreatedEvent(
+                java.util.UUID.randomUUID().toString(),
+                savedOrder.getId(),
+                savedOrder.getTotalAmount(),
+                savedOrder.getCreatedAt()
+        );
+
+
+        orderEventPublisher.publishAfterCommit(event);
         evictProductSearchCacheAfterCommit();
         return toOrderResponse(savedOrder);
     }
