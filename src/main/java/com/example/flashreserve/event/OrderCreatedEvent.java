@@ -7,6 +7,7 @@ public record OrderCreatedEvent(
         String eventId,
         Long orderId,
         BigDecimal totalAmount,
-        LocalDateTime occurredAt
+        LocalDateTime occurredAt,
+        String customerEmail
 ) {
 }

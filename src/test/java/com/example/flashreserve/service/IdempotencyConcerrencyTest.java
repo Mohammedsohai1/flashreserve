@@ -73,7 +73,7 @@ IdempotencyConcurrencyTest {
         List<Future<OrderResponse>> results = new ArrayList<>();
 
         CreateOrderRequest request =
-                new CreateOrderRequest(productId, 2);
+                new CreateOrderRequest(productId, 2,"test@example.com");
 
         try {
             for (int i = 0; i < numberOfRequests; i++) {

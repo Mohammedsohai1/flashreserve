@@ -12,7 +12,10 @@ public class IdempotencyFingerprintService {
 
     public String generate(CreateOrderRequest request) {
 
-        String data = request.productId() + ":" + request.quantity();
+//        String data = request.productId() + ":" + request.quantity();
+        String data = request.productId()
+                + ":" + request.quantity()
+                + ":" + request.customerEmail().trim().toLowerCase(java.util.Locale.ROOT);
 
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");

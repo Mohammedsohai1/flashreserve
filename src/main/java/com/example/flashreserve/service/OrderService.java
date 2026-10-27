@@ -38,6 +38,7 @@ public class OrderService {
     private final IdempotencyRepository idempotencyRepository;
     private final IdempotencyFingerprintService idempotencyFingerprintService;
     private final OrderEventPublisher orderEventPublisher;
+    private final OutboxEventService outboxEventService;
 
     public OrderService(
             OrderRepository orderRepository,
@@ -45,7 +46,7 @@ public class OrderService {
             ProductService productService,
             IdempotencyRepository idempotencyRepository,
             IdempotencyFingerprintService idempotencyFingerprintService,
-            InventoryRepository inventoryRepository, CacheManager cacheManager, OrderEventPublisher orderEventPublisher) {
+            InventoryRepository inventoryRepository, CacheManager cacheManager, OrderEventPublisher orderEventPublisher, OutboxEventService outboxEventService) {
         this.orderRepository = orderRepository;
         this.productRepository = productRepository;
         this.productService = productService;
@@ -54,6 +55,7 @@ public class OrderService {
         this.inventoryRepository=inventoryRepository;
         this.cacheManager = cacheManager;
         this.orderEventPublisher = orderEventPublisher;
+        this.outboxEventService = outboxEventService;
     }
 
     @Transactional
@@ -113,11 +115,12 @@ public class OrderService {
                 java.util.UUID.randomUUID().toString(),
                 savedOrder.getId(),
                 savedOrder.getTotalAmount(),
-                savedOrder.getCreatedAt()
+                savedOrder.getCreatedAt(),
+                request.customerEmail()
         );
 
 
-        orderEventPublisher.publishAfterCommit(event);
+        outboxEventService.recordOrderCreatedEvent(event);
         evictProductSearchCacheAfterCommit();
         return toOrderResponse(savedOrder);
     }
