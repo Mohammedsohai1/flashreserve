@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FlashReserve Checkout</title>
+    <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
+</head>
+<body>
+<h1>FlashReserve Checkout</h1>
+
+
+<label for="orderId">FlashReserve Order ID</label>
+<input type="number" id="orderId" min="1" required>
+
+
+<button id="payButton">Pay Now</button>
+<p id="message"></p>
+
+
+<script>
+    const payButton = document.getElementById("payButton");
+    const message = document.getElementById("message");
+
+
+    payButton.addEventListener("click", async () => {
+        const orderId = document.getElementById("orderId").value;
+
+
+        if (!orderId || Number(orderId) < 1) {
+            message.textContent = "Enter a valid order ID.";
+            return;
+        }
+
+
+        payButton.disabled = true;
+        message.textContent = "Creating payment...";
+
+
+        try {
+            const response = await fetch(
+                "/payments/orders/" + encodeURIComponent(orderId),
+                {
+                    method: "POST"
+                }
+        );
+
+
+            if (!response.ok) {
+                throw new Error("Could not create payment order.");
+            }
+
+
+            const payment = await response.json();
+
+
+            const options = {
+                key: payment.razorpayKeyId,
+                amount: payment.amountPaise,
+                currency: payment.currency,
+                name: "FlashReserve",
+                description: "Order #" + payment.orderId,
+                order_id: payment.razorpayOrderId,
+
+
+                handler: async function (result) {
+                    message.textContent =
+                        "Payment submitted. Verifying with FlashReserve...";
+
+
+                    try {
+                        const verifyResponse = await fetch(
+                            "/payments/verify",
+                            {
+                                method: "POST",
+                                headers: {
+                                    "Content-Type": "application/json"
+                                },
+                                body: JSON.stringify({
+                                    paymentId: payment.paymentId,
+                                    razorpayOrderId: result.razorpay_order_id,
+                                    razorpayPaymentId: result.razorpay_payment_id,
+                                    razorpaySignature: result.razorpay_signature
+                                })
+                            }
+                        );
+
+
+                        const verification = await verifyResponse.json();
+
+
+                        if (!verifyResponse.ok) {
+                            throw new Error(
+                                verification.message || "Payment verification failed."
+                            );
+                        }
+
+
+                        message.textContent =
+                            "Payment verified successfully!";
+                    } catch (error) {
+                        message.textContent =
+                            error.message +
+                            " Check your order status before retrying.";
+                    }
+                },
+
+
+                modal: {
+                    ondismiss: function () {
+                        message.textContent =
+                            "Checkout closed. Check order status before retrying.";
+                    }
+                }
+            };
+
+
+            const checkout = new Razorpay(options);
+            checkout.open();
+            message.textContent = "";
+
+
+        } catch (error) {
+            message.textContent = error.message;
+        } finally {
+            payButton.disabled = false;
+        }
+    });
+</script>
+</body>
+</html>
