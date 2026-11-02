@@ -42,7 +42,7 @@ public class OrderNotificationService {
                 Total amount: %s
 
 
-                Your order has been created successfully.
+                We recieved your payment. Your order has been created successfully.
 
 
                 Thank you,

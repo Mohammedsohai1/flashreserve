@@ -25,6 +25,9 @@ public class Order {
     @Column(name = "created_at", nullable = false)
     private LocalDateTime createdAt;
 
+    @Column(name = "customer_email", length = 320)
+    private String customerEmail;
+
     @OneToMany(
             mappedBy = "order",
             cascade = CascadeType.ALL,
@@ -35,10 +38,11 @@ public class Order {
     protected Order() {
     }
 
-    public Order(OrderStatus status, BigDecimal totalAmount, LocalDateTime createdAt) {
+    public Order(OrderStatus status, BigDecimal totalAmount, LocalDateTime createdAt, String customerEmail) {
         this.status = status;
         this.totalAmount = totalAmount;
         this.createdAt = createdAt;
+        this.customerEmail=customerEmail;
     }
 
     public Long getId() {
@@ -59,6 +63,10 @@ public class Order {
 
     public List<OrderItem> getItems() {
         return items;
+    }
+
+    public String getCustomerEmail() {
+        return customerEmail;
     }
 
     public void setStatus(OrderStatus status) {

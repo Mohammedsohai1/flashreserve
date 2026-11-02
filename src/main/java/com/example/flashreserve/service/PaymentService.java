@@ -8,6 +8,7 @@ import com.example.flashreserve.entity.Order;
 import com.example.flashreserve.entity.OrderStatus;
 import com.example.flashreserve.entity.Payment;
 import com.example.flashreserve.entity.PaymentStatus;
+import com.example.flashreserve.event.OrderCreatedEvent;
 import com.example.flashreserve.repository.OrderRepository;
 import com.example.flashreserve.repository.PaymentRepository;
 import com.razorpay.RazorpayClient;
@@ -23,7 +24,9 @@ import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.LocalDateTime;
 import java.util.Objects;
+import java.util.UUID;
 
 @Service
 public class PaymentService {
@@ -34,6 +37,7 @@ public class PaymentService {
     private final JdbcTemplate jdbcTemplate;
     private final String keyId;
     private final String keySecret;
+    private final OutboxEventService outboxEventService;
 
     public PaymentService(
             RazorpayClient razorpayClient,
@@ -41,7 +45,7 @@ public class PaymentService {
             PaymentRepository paymentRepository,
             JdbcTemplate jdbcTemplate,
             @Value("${razorpay.key-id}") String keyId,
-            @Value("${razorpay.key-secret}") String keySecret
+            @Value("${razorpay.key-secret}") String keySecret, OutboxEventService outboxEventService
     ) {
         this.razorpayClient = razorpayClient;
         this.orderRepository = orderRepository;
@@ -49,6 +53,7 @@ public class PaymentService {
         this.jdbcTemplate = jdbcTemplate;
         this.keyId = keyId;
         this.keySecret = keySecret;
+        this.outboxEventService = outboxEventService;
     }
 
     @Transactional
@@ -231,28 +236,47 @@ public class PaymentService {
         }
     }
 
+
+
     private void markOrderPaidIfCreated(Payment payment) {
+        Long orderId = payment.getOrder().getId();
+
         int updated = jdbcTemplate.update("""
-            UPDATE orders
-            SET status = 'PAID'
-            WHERE id = ?
-              AND status = 'CREATED'
-            """, payment.getOrder().getId());
+        UPDATE orders
+        SET status = 'PAID'
+        WHERE id = ?
+          AND status = 'CREATED'
+        """, orderId);
 
+        boolean orderIsPaid = updated == 1;
 
-        if (updated == 0) {
-            Order order = orderRepository.findById(
-                            payment.getOrder().getId())
+        if (!orderIsPaid) {
+            Order order = orderRepository.findById(orderId)
                     .orElseThrow(() -> new ResponseStatusException(
                             HttpStatus.NOT_FOUND, "Order not found"));
 
+            orderIsPaid = order.getStatus() == OrderStatus.PAID;
 
-            if (order.getStatus() != OrderStatus.PAID) {
+            if (!orderIsPaid) {
                 System.err.println(
                         "RECONCILIATION REQUIRED: Razorpay payment "
-                                + "is captured, but order " + order.getId()
+                                + "is captured, but order " + orderId
                                 + " has status " + order.getStatus());
             }
+        }
+
+        if (orderIsPaid) {
+            Order order = payment.getOrder();
+
+            OrderCreatedEvent event = new OrderCreatedEvent(
+                    UUID.randomUUID().toString(),
+                    order.getId(),
+                    order.getTotalAmount(),
+                    LocalDateTime.now(),
+                    order.getCustomerEmail()
+            );
+
+            outboxEventService.recordPaymentCapturedEvent(event);
         }
     }
 }

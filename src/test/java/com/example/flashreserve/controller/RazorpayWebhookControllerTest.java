@@ -78,7 +78,8 @@ class RazorpayWebhookControllerTest {
         Order order = new Order(
                 OrderStatus.values()[0],
                 new BigDecimal("250.00"),
-                LocalDateTime.now());
+                LocalDateTime.now(),"customer@example.com"
+        );
 
         order = orderRepository.saveAndFlush(order);
 

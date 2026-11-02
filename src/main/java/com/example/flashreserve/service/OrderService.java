@@ -90,7 +90,8 @@ public class OrderService {
         Order order = new Order(
                 OrderStatus.CREATED,
                 totalAmount,
-                LocalDateTime.now()
+                LocalDateTime.now(),
+                request.customerEmail()
         );
 
         OrderItem orderItem = new OrderItem(
@@ -111,16 +112,16 @@ public class OrderService {
         );
 
         idempotencyRepository.save(savedKey);
-        OrderCreatedEvent event = new OrderCreatedEvent(
-                java.util.UUID.randomUUID().toString(),
-                savedOrder.getId(),
-                savedOrder.getTotalAmount(),
-                savedOrder.getCreatedAt(),
-                request.customerEmail()
-        );
-
-
-        outboxEventService.recordOrderCreatedEvent(event);
+//        OrderCreatedEvent event = new OrderCreatedEvent(
+//                java.util.UUID.randomUUID().toString(),
+//                savedOrder.getId(),
+//                savedOrder.getTotalAmount(),
+//                savedOrder.getCreatedAt(),
+//                request.customerEmail()
+//        );
+//
+//
+//        outboxEventService.recordOrderCreatedEvent(event);
         evictProductSearchCacheAfterCommit();
         return toOrderResponse(savedOrder);
     }
@@ -134,21 +135,26 @@ public class OrderService {
             throw new OrderAlreadyCancelledException();
         }
 
+        if (order.getStatus() != OrderStatus.CREATED) {
+            throw new IllegalStateException(
+                    "Only unpaid CREATED orders can be cancelled");
+        }
+
+        // Change the status in the same transaction as inventory restoration.
+        order.setStatus(OrderStatus.CANCELLED);
+
         for (OrderItem item : order.getItems()) {
             int updatedRows = inventoryRepository.increaseQuantity(
                     item.getProductId(),
-                    item.getQuantity()
-            );
+                    item.getQuantity());
 
             if (updatedRows != 1) {
                 throw new IllegalStateException(
                         "Could not restore inventory for product "
-                                + item.getProductId()
-                );
+                                + item.getProductId());
             }
         }
 
-        order.setStatus(OrderStatus.CANCELLED);
         evictProductSearchCacheAfterCommit();
         return toOrderResponse(order);
     }

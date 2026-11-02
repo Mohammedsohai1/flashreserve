@@ -6,6 +6,7 @@ import com.example.flashreserve.entity.Order;
 import com.example.flashreserve.entity.OrderStatus;
 import com.example.flashreserve.entity.Payment;
 import com.example.flashreserve.entity.PaymentStatus;
+import com.example.flashreserve.event.OrderCreatedEvent;
 import com.example.flashreserve.repository.OrderRepository;
 import com.example.flashreserve.repository.PaymentRepository;
 import com.razorpay.PaymentClient;
@@ -30,8 +31,13 @@ import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.mockito.ArgumentMatchers.*;
-import static org.mockito.Mockito.*;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.contains;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
 class PaymentServiceTest {
@@ -51,6 +57,9 @@ class PaymentServiceTest {
     @Mock
     private PaymentClient razorpayPaymentClient;
 
+    @Mock
+    private OutboxEventService outboxEventService;
+
     private RazorpayClient razorpayClient;
     private PaymentService paymentService;
 
@@ -62,7 +71,10 @@ class PaymentServiceTest {
         razorpayClient = new RazorpayClient(KEY_ID, KEY_SECRET);
 
         ReflectionTestUtils.setField(
-                razorpayClient, "payments", razorpayPaymentClient);
+                razorpayClient,
+                "payments",
+                razorpayPaymentClient
+        );
 
         paymentService = new PaymentService(
                 razorpayClient,
@@ -70,20 +82,22 @@ class PaymentServiceTest {
                 paymentRepository,
                 jdbcTemplate,
                 KEY_ID,
-                KEY_SECRET
-
+                KEY_SECRET,
+                outboxEventService
         );
 
         order = new Order(
                 OrderStatus.CREATED,
                 new BigDecimal("250.00"),
-                LocalDateTime.now()
+                LocalDateTime.now(),
+                "customer@example.com"
         );
 
         ReflectionTestUtils.setField(order, "id", 1L);
 
         payment = new Payment(order, "order_test_123", 25000L);
         payment.setStatus(PaymentStatus.CREATED);
+
         ReflectionTestUtils.setField(payment, "id", 10L);
     }
 
@@ -91,11 +105,15 @@ class PaymentServiceTest {
     void shouldMarkPaymentCapturedAndOrderPaid() throws Exception {
         String razorpayPaymentId = "pay_test_123";
 
+        String signature = generateSignature(
+                "order_test_123|pay_test_123"
+        );
+
         VerifyPaymentRequest request = new VerifyPaymentRequest(
                 10L,
                 "order_test_123",
                 razorpayPaymentId,
-                generateSignature("order_test_123|" + razorpayPaymentId)
+                signature
         );
 
         JSONObject fetchedPayment = new JSONObject();
@@ -122,6 +140,16 @@ class PaymentServiceTest {
                 eq(1L)
         )).thenReturn(1);
 
+        // Verify the generated signature independently before calling the service.
+        assertEquals(
+                true,
+                Utils.verifySignature(
+                        "order_test_123|pay_test_123",
+                        signature,
+                        KEY_SECRET
+                )
+        );
+
         var response = paymentService.verifyPayment(request);
 
         assertNotNull(response);
@@ -134,17 +162,9 @@ class PaymentServiceTest {
                 contains("UPDATE orders"),
                 eq(1L)
         );
-    }
 
-    private String generateSignature(String payload) throws Exception {
-        Mac mac = Mac.getInstance("HmacSHA256");
-        mac.init(new SecretKeySpec(
-                KEY_SECRET.getBytes(StandardCharsets.UTF_8),
-                "HmacSHA256"
-        ));
-
-        return HexFormat.of().formatHex(
-                mac.doFinal(payload.getBytes(StandardCharsets.UTF_8))
+        verify(outboxEventService).recordPaymentCapturedEvent(
+                any(OrderCreatedEvent.class)
         );
     }
 
@@ -156,9 +176,6 @@ class PaymentServiceTest {
         when(paymentRepository
                 .findByOrder_IdOrderByCreatedAtDesc(1L))
                 .thenReturn(java.util.List.of(payment));
-
-//        when(paymentRepository.save(any(Payment.class)))
-//                .thenAnswer(invocation -> invocation.getArgument(0));
 
         var response = paymentService.createPayment(1L);
 
@@ -173,5 +190,18 @@ class PaymentServiceTest {
         verifyNoInteractions(razorpayPaymentClient);
     }
 
-}
+    private String generateSignature(String payload) throws Exception {
+        Mac mac = Mac.getInstance("HmacSHA256");
 
+        mac.init(new SecretKeySpec(
+                KEY_SECRET.getBytes(StandardCharsets.UTF_8),
+                "HmacSHA256"
+        ));
+
+        byte[] hash = mac.doFinal(
+                payload.getBytes(StandardCharsets.UTF_8)
+        );
+
+        return HexFormat.of().formatHex(hash);
+    }
+}
