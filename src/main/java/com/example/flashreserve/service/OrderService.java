@@ -1,5 +1,6 @@
 package com.example.flashreserve.service;
 
+import com.example.flashreserve.dto.AdminOrderResponse;
 import com.example.flashreserve.dto.CreateOrderRequest;
 import com.example.flashreserve.dto.OrderItemResponse;
 import com.example.flashreserve.dto.OrderResponse;
@@ -18,6 +19,8 @@ import jakarta.persistence.EntityManagerFactory;
 import org.springframework.cache.Cache;
 import org.springframework.cache.CacheManager;
 import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
@@ -125,11 +128,28 @@ public class OrderService {
         evictProductSearchCacheAfterCommit();
         return toOrderResponse(savedOrder);
     }
+
     @Transactional
     public OrderResponse cancelOrder(Long orderId) {
+        // Internal use by the expiration scheduler.
+        return cancelOrderInternal(orderId, null, false);
+    }
+
+    @Transactional
+    public OrderResponse cancelOrder(
+            Long orderId, String userEmail, boolean isAdmin) {
+        return cancelOrderInternal(orderId, userEmail, !isAdmin);
+    }
+
+    private OrderResponse cancelOrderInternal(
+            Long orderId, String userEmail, boolean enforceOwnership) {
 
         Order order = orderRepository.findByIdForUpdate(orderId)
                 .orElseThrow(OrderNotFoundException::new);
+
+        if (enforceOwnership) {
+            verifyOwnership(order, userEmail);
+        }
 
         if (order.getStatus() == OrderStatus.CANCELLED) {
             throw new OrderAlreadyCancelledException();
@@ -140,7 +160,6 @@ public class OrderService {
                     "Only unpaid CREATED orders can be cancelled");
         }
 
-        // Change the status in the same transaction as inventory restoration.
         order.setStatus(OrderStatus.CANCELLED);
 
         for (OrderItem item : order.getItems()) {
@@ -159,6 +178,7 @@ public class OrderService {
         return toOrderResponse(order);
     }
 
+
     private OrderResponse toOrderResponse(Order order) {
                 List<OrderItemResponse> itemResponses = order.getItems()
                 .stream()
@@ -176,13 +196,57 @@ public class OrderService {
                itemResponses
         );
     }
+
     @Transactional(readOnly = true)
     public OrderResponse getOrderById(Long orderId) {
+        // Preserve compatibility for existing internal callers and tests.
         Order order = orderRepository.findById(orderId)
                 .orElseThrow(OrderNotFoundException::new);
 
         return toOrderResponse(order);
     }
+
+    @Transactional(readOnly = true)
+    public OrderResponse getOrderById(
+            Long orderId, String userEmail, boolean isAdmin) {
+
+        Order order = orderRepository.findById(orderId)
+                .orElseThrow(OrderNotFoundException::new);
+
+        if (!isAdmin) {
+            verifyOwnership(order, userEmail);
+        }
+
+        return toOrderResponse(order);
+    }
+
+    private void verifyOwnership(Order order, String userEmail) {
+        if (userEmail == null
+                || order.getCustomerEmail() == null
+                || !order.getCustomerEmail().equalsIgnoreCase(userEmail)) {
+            // Return 404 rather than disclose another customer's order.
+            throw new OrderNotFoundException();
+        }
+    }
+    @Transactional(readOnly = true)
+    public Page<AdminOrderResponse> getAllOrders(Pageable pageable) {
+        return orderRepository.findAll(pageable)
+                .map(order -> new AdminOrderResponse(
+                        order.getId(),
+                        order.getCustomerEmail(),
+                        order.getStatus().name(),
+                        order.getTotalAmount(),
+                        order.getCreatedAt(),
+                        order.getItems().stream()
+                                .map(item -> new OrderItemResponse(
+                                        item.getProductId(),
+                                        item.getQuantity(),
+                                        item.getUnitPrice()
+                                ))
+                                .toList()
+                ));
+    }
+
     private void evictProductSearchCacheAfterCommit() {
         if (TransactionSynchronizationManager.isSynchronizationActive()) {
             TransactionSynchronizationManager.registerSynchronization(
