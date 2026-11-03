@@ -5,6 +5,7 @@ import com.nimbusds.jose.jwk.source.ImmutableSecret;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -92,21 +93,60 @@ public class SecurityConfig {
                         .sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .userDetailsService(userDetailsService)
                 .authorizeHttpRequests(auth -> auth
+
+                        // Registration and login are public
                         .requestMatchers("/auth/**").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/checkout.html").permitAll()
+
+                        // Razorpay webhook is authenticated by its signature
                         .requestMatchers(
                                 org.springframework.http.HttpMethod.POST,
                                 "/payments/webhook"
                         ).permitAll()
+
+                        // Public product browsing
                         .requestMatchers(
                                 org.springframework.http.HttpMethod.GET,
-                                "/products", "/products/**"
+                                "/products",
+                                "/products/**"
                         ).permitAll()
+
+                        // Only ADMIN can create products
+                        .requestMatchers(
+                                org.springframework.http.HttpMethod.POST,
+                                "/products"
+                        ).hasRole("ADMIN")
+
+                        // Only ADMIN can modify or delete products
+                        .requestMatchers(
+                                org.springframework.http.HttpMethod.PUT,
+                                "/products/**"
+                        ).hasRole("ADMIN")
+                        .requestMatchers(
+                                org.springframework.http.HttpMethod.PATCH,
+                                "/products/**"
+                        ).hasRole("ADMIN")
+                        .requestMatchers(
+                                org.springframework.http.HttpMethod.DELETE,
+                                "/products/**"
+                        ).hasRole("ADMIN")
+
+                        // Inventory reservation requires authentication
+                        .requestMatchers(
+                                org.springframework.http.HttpMethod.POST,
+                                "/products/*/reserve"
+                        ).authenticated()
+
+                        // Only ADMIN can view all orders
                         .requestMatchers(
                                 org.springframework.http.HttpMethod.GET,
                                 "/orders"
                         ).hasRole("ADMIN")
-                        .requestMatchers("/products/**").hasRole("ADMIN")
+
+                        // Customer order and payment operations require authentication
                         .requestMatchers("/orders/**", "/payments/**").authenticated()
+
+                        // Reject anything not explicitly allowed
                         .anyRequest().denyAll()
                 )
                 .oauth2ResourceServer(oauth2 -> oauth2

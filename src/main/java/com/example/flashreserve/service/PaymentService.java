@@ -279,4 +279,40 @@ public class PaymentService {
             outboxEventService.recordPaymentCapturedEvent(event);
         }
     }
+    @Transactional
+    public CreatePaymentResponse createPayment(
+            Long orderId, String userEmail) {
+
+        Order order = orderRepository.findById(orderId)
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.NOT_FOUND, "Order not found"));
+
+        verifyOrderOwnership(order, userEmail);
+
+        return createPayment(orderId);
+    }
+    @Transactional
+    public VerifyPaymentResponse verifyPayment(
+            VerifyPaymentRequest request, String userEmail) {
+
+        Payment payment = paymentRepository.findById(request.paymentId())
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.NOT_FOUND, "Payment record not found"));
+
+        verifyOrderOwnership(payment.getOrder(), userEmail);
+
+        return verifyPayment(request);
+    }
+    private void verifyOrderOwnership(Order order, String userEmail) {
+
+        if (userEmail == null
+                || order.getCustomerEmail() == null
+                || !order.getCustomerEmail().equalsIgnoreCase(userEmail)) {
+
+            throw new ResponseStatusException(
+                    HttpStatus.NOT_FOUND,
+                    "Resource not found"
+            );
+        }
+    }
 }

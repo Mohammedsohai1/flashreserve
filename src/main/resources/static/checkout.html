@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -7,53 +8,66 @@
     <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
 </head>
 <body>
+
 <h1>FlashReserve Checkout</h1>
 
+<label for="token">JWT Access Token</label>
+<br>
+<input type="password" id="token" placeholder="Paste your JWT token" required
+       style="width: 450px; max-width: 90%;">
+<br><br>
 
 <label for="orderId">FlashReserve Order ID</label>
+<br>
 <input type="number" id="orderId" min="1" required>
-
+<br><br>
 
 <button id="payButton">Pay Now</button>
 <p id="message"></p>
-
 
 <script>
     const payButton = document.getElementById("payButton");
     const message = document.getElementById("message");
 
-
     payButton.addEventListener("click", async () => {
-        const orderId = document.getElementById("orderId").value;
 
+        const orderId = document.getElementById("orderId").value;
+        const token = document.getElementById("token").value.trim();
+
+        if (!token) {
+            message.textContent = "Please enter your JWT token.";
+            return;
+        }
 
         if (!orderId || Number(orderId) < 1) {
             message.textContent = "Enter a valid order ID.";
             return;
         }
 
-
         payButton.disabled = true;
         message.textContent = "Creating payment...";
 
-
         try {
+            // Step 1: Create payment using authenticated JWT
             const response = await fetch(
                 "/payments/orders/" + encodeURIComponent(orderId),
                 {
-                    method: "POST"
+                    method: "POST",
+                    headers: {
+                        "Authorization": `Bearer ${token}`
+                    }
                 }
-        );
-
-
-            if (!response.ok) {
-                throw new Error("Could not create payment order.");
-            }
-
+            );
 
             const payment = await response.json();
 
+            if (!response.ok) {
+                throw new Error(
+                    payment.message || "Could not create payment."
+                );
+            }
 
+            // Step 2: Configure Razorpay checkout
             const options = {
                 key: payment.razorpayKeyId,
                 amount: payment.amountPaise,
@@ -62,11 +76,11 @@
                 description: "Order #" + payment.orderId,
                 order_id: payment.razorpayOrderId,
 
-
+                // Step 3: Automatically verify after successful payment
                 handler: async function (result) {
+
                     message.textContent =
                         "Payment submitted. Verifying with FlashReserve...";
-
 
                     try {
                         const verifyResponse = await fetch(
@@ -74,7 +88,8 @@
                             {
                                 method: "POST",
                                 headers: {
-                                    "Content-Type": "application/json"
+                                    "Content-Type": "application/json",
+                                    "Authorization": `Bearer ${token}`
                                 },
                                 body: JSON.stringify({
                                     paymentId: payment.paymentId,
@@ -85,26 +100,24 @@
                             }
                         );
 
-
                         const verification = await verifyResponse.json();
-
 
                         if (!verifyResponse.ok) {
                             throw new Error(
-                                verification.message || "Payment verification failed."
+                                verification.message ||
+                                "Payment verification failed."
                             );
                         }
 
-
                         message.textContent =
                             "Payment verified successfully!";
+
                     } catch (error) {
                         message.textContent =
                             error.message +
                             " Check your order status before retrying.";
                     }
                 },
-
 
                 modal: {
                     ondismiss: function () {
@@ -114,11 +127,11 @@
                 }
             };
 
-
+            // Step 4: Open Razorpay test checkout
             const checkout = new Razorpay(options);
             checkout.open();
-            message.textContent = "";
 
+            message.textContent = "";
 
         } catch (error) {
             message.textContent = error.message;
@@ -127,5 +140,6 @@
         }
     });
 </script>
+
 </body>
 </html>
