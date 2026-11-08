@@ -54,4 +54,31 @@ public class OrderNotificationService {
 
         mailSender.send(message);
     }
+    public void sendPasswordResetOtp(String email, String otp) {
+
+        SimpleMailMessage message = new SimpleMailMessage();
+
+        message.setFrom(fromAddress);
+        message.setTo(email);
+        message.setSubject("FlashReserve - Password Reset OTP");
+
+        message.setText("""
+            Hello,
+
+            We received a request to reset your FlashReserve password.
+
+            Your OTP is: %s
+
+            This OTP is valid for 5 minutes.
+
+            Do not share this OTP with anyone.
+
+            If you did not request a password reset, please ignore this email.
+
+            Regards,
+            FlashReserve Team
+            """.formatted(otp));
+
+        mailSender.send(message);
+    }
 }

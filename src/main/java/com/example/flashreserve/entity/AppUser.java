@@ -60,4 +60,7 @@ public class AppUser {
     public LocalDateTime getCreatedAt() {
         return createdAt;
     }
+    public void updatePasswordHash(String passwordHash) {
+        this.passwordHash = passwordHash;
+    }
 }

@@ -1,11 +1,14 @@
 package com.example.flashreserve.config;
 
+import com.example.flashreserve.dto.ErrorResponse;
 import com.example.flashreserve.service.CustomUserDetailsService;
 import com.nimbusds.jose.jwk.source.ImmutableSecret;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -20,7 +23,10 @@ import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.oauth2.jwt.NimbusJwtEncoder;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
 import org.springframework.security.oauth2.server.resource.authentication.JwtGrantedAuthoritiesConverter;
+import org.springframework.security.web.AuthenticationEntryPoint;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.access.AccessDeniedHandler;
+import tools.jackson.databind.ObjectMapper;
 
 import javax.crypto.SecretKey;
 import javax.crypto.spec.SecretKeySpec;
@@ -83,7 +89,35 @@ public class SecurityConfig {
     SecurityFilterChain securityFilterChain(
             HttpSecurity http,
             JwtAuthenticationConverter jwtAuthenticationConverter,
-            CustomUserDetailsService userDetailsService) throws Exception {
+            CustomUserDetailsService userDetailsService,
+            ObjectMapper objectMapper) throws Exception {
+        AuthenticationEntryPoint authenticationEntryPoint =
+                (request, response, exception) -> {
+                    response.setStatus(HttpStatus.UNAUTHORIZED.value());
+                    response.setContentType(MediaType.APPLICATION_JSON_VALUE);
+
+                    objectMapper.writeValue(
+                            response.getOutputStream(),
+                            new ErrorResponse(
+                                    "UNAUTHORIZED",
+                                    "Authentication is required or the access token is invalid"
+                            )
+                    );
+                };
+
+        AccessDeniedHandler accessDeniedHandler =
+                (request, response, exception) -> {
+                    response.setStatus(HttpStatus.FORBIDDEN.value());
+                    response.setContentType(MediaType.APPLICATION_JSON_VALUE);
+
+                    objectMapper.writeValue(
+                            response.getOutputStream(),
+                            new ErrorResponse(
+                                    "ACCESS_DENIED",
+                                    "You do not have permission to perform this operation"
+                            )
+                    );
+                };
 
         http
                 .csrf(AbstractHttpConfigurer::disable)
@@ -92,6 +126,10 @@ public class SecurityConfig {
                 .sessionManagement(session -> session
                         .sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .userDetailsService(userDetailsService)
+                .exceptionHandling(exceptions -> exceptions
+                        .authenticationEntryPoint(authenticationEntryPoint)
+                        .accessDeniedHandler(accessDeniedHandler)
+                )
                 .authorizeHttpRequests(auth -> auth
 
                         // Registration and login are public
@@ -150,6 +188,8 @@ public class SecurityConfig {
                         .anyRequest().denyAll()
                 )
                 .oauth2ResourceServer(oauth2 -> oauth2
+                        .authenticationEntryPoint(authenticationEntryPoint)
+                        .accessDeniedHandler(accessDeniedHandler)
                         .jwt(jwt -> jwt.jwtAuthenticationConverter(
                                 jwtAuthenticationConverter)));
 
