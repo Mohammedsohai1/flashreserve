@@ -104,22 +104,10 @@ public class PasswordResetService {
 
         redisTemplate.delete(attemptsKey);
 
-        try {
-            notificationService.sendPasswordResetOtp(
-                    normalizedEmail,
-                    otp
-            );
-        } catch (MailException ex) {
-
-            log.error("Unable to send password reset email", ex);
-
-            redisTemplate.delete(otpKey);
-            redisTemplate.delete(cooldownKey);
-
-            throw new IllegalStateException(
-                    "Unable to send password reset email. Please try again."
-            );
-        }
+        notificationService.sendPasswordResetOtp(
+                normalizedEmail,
+                otp
+        );
     }
 
     // ---------------- VERIFY OTP ----------------

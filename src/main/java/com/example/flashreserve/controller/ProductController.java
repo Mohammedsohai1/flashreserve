@@ -4,6 +4,7 @@ import com.example.flashreserve.dto.CreateProductRequest;
 import com.example.flashreserve.dto.ProductResponse;
 import com.example.flashreserve.dto.ReserveInventoryRequest;
 import com.example.flashreserve.service.ProductService;
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import jakarta.validation.Valid;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -12,6 +13,9 @@ import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
 
 import java.math.BigDecimal;
 import java.util.Set;
@@ -25,7 +29,17 @@ public class ProductController {
     public ProductController(ProductService productService) {
         this.productService = productService;
     }
-
+    @Operation(
+            summary = "Create a product",
+            description = "Creates a new product with its initial inventory. ADMIN access required."
+    )
+    @ApiResponses({
+            @ApiResponse(responseCode = "201", description = "Product created successfully"),
+            @ApiResponse(responseCode = "400", description = "Invalid request data"),
+            @ApiResponse(responseCode = "401", description = "Authentication required"),
+            @ApiResponse(responseCode = "403", description = "ADMIN role required")
+    })
+    @SecurityRequirement(name = "bearerAuth")
     @PostMapping
     public ResponseEntity<ProductResponse> createProduct(
             @Valid @RequestBody CreateProductRequest request) {
@@ -36,11 +50,11 @@ public class ProductController {
                 .status(HttpStatus.CREATED)
                 .body(response);
     }
-    @PostMapping("/{productId}/reserve")
-    public ResponseEntity<Void>reserve(@PathVariable Long productId,@Valid @RequestBody ReserveInventoryRequest request){
-        productService.reserve(productId,request.quantity());
-        return ResponseEntity.noContent().build();
-    }
+//    @PostMapping("/{productId}/reserve")
+//    public ResponseEntity<Void>reserve(@PathVariable Long productId,@Valid @RequestBody ReserveInventoryRequest request){
+//        productService.reserve(productId,request.quantity());
+//        return ResponseEntity.noContent().build();
+//    }
 //    @GetMapping
 //    public ResponseEntity<Page<ProductResponse>> getProducts(
 //            @RequestParam(defaultValue = "0") int page,
@@ -76,6 +90,14 @@ public class ProductController {
 //
 //        return ResponseEntity.ok(productService.getProducts(pageable));
 //    }
+@Operation(
+        summary = "Search products",
+        description = "Search and filter products with pagination and sorting."
+)
+@ApiResponses({
+        @ApiResponse(responseCode = "200", description = "Products retrieved successfully"),
+        @ApiResponse(responseCode = "400", description = "Invalid search or pagination parameters")
+})
     @GetMapping
     public ResponseEntity<Page<ProductResponse>> getProducts(
             @RequestParam(required = false) String search,
@@ -133,7 +155,14 @@ public class ProductController {
                 )
         );
     }
-
+    @Operation(
+            summary = "Get product by ID",
+            description = "Retrieves product details using its unique ID."
+    )
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Product retrieved successfully"),
+            @ApiResponse(responseCode = "404", description = "Product not found")
+    })
     @GetMapping("/{productId}")
     public ResponseEntity<ProductResponse> getProductById(
             @PathVariable Long productId) {

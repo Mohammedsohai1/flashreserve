@@ -1,6 +1,6 @@
 package com.example.flashreserve.controller;
 
-
+import com.example.flashreserve.service.JwtTokenService;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -9,12 +9,15 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.cache.Cache;
 import org.springframework.cache.CacheManager;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.web.servlet.MockMvc;
 import tools.jackson.databind.ObjectMapper;
 
 import java.math.BigDecimal;
+import java.util.List;
 import java.util.UUID;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -27,6 +30,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class OrderInventoryCacheInvalidationIntegrationTest {
 
     private static final String PREFIX = "OrderCacheIT-";
+    private static final String TEST_CUSTOMER_EMAIL =
+            "cache-test-user@example.com";
 
     @Autowired
     private MockMvc mockMvc;
@@ -40,13 +45,25 @@ class OrderInventoryCacheInvalidationIntegrationTest {
     @Autowired
     private ObjectMapper objectMapper;
 
+    @Autowired
+    private JwtTokenService jwtTokenService;
+
     private String productName;
     private Long productId;
     private Long orderId;
+    private String accessToken;
 
     @BeforeEach
     void setUp() {
         clearSearchCache();
+
+        var authentication = new UsernamePasswordAuthenticationToken(
+                TEST_CUSTOMER_EMAIL,
+                null,
+                List.of(new SimpleGrantedAuthority("ROLE_CUSTOMER"))
+        );
+
+        accessToken = jwtTokenService.generateToken(authentication);
 
         productName = PREFIX + UUID.randomUUID();
 
@@ -76,6 +93,11 @@ class OrderInventoryCacheInvalidationIntegrationTest {
         clearSearchCache();
 
         if (orderId != null) {
+            jdbcTemplate.update(
+                    "DELETE FROM payments WHERE order_id = ?",
+                    orderId
+            );
+
             jdbcTemplate.update(
                     "DELETE FROM idempotency_keys WHERE order_id = ?",
                     orderId
@@ -125,13 +147,15 @@ class OrderInventoryCacheInvalidationIntegrationTest {
         // Create an order for 3 units.
         String orderResponse = mockMvc.perform(post("/orders")
                         .contentType(MediaType.APPLICATION_JSON)
+                        .header("Authorization", "Bearer " + accessToken)
                         .header("Idempotency-Key", idempotencyKey)
                         .content("""
                                 {
                                   "productId": %d,
-                                  "quantity": 3
+                                  "quantity": 3,
+                                  "customerEmail": "%s"
                                 }
-                                """.formatted(productId)))
+                                """.formatted(productId, TEST_CUSTOMER_EMAIL)))
                 .andExpect(status().isCreated())
                 .andReturn()
                 .getResponse()
@@ -151,7 +175,8 @@ class OrderInventoryCacheInvalidationIntegrationTest {
                         .value(7));
 
         // Cancel the order and restore the three units.
-        mockMvc.perform(post("/orders/{orderId}/cancel", orderId))
+        mockMvc.perform(post("/orders/{orderId}/cancel", orderId)
+                        .header("Authorization", "Bearer " + accessToken))
                 .andExpect(status().isOk());
 
         // Stock should be back to 10.

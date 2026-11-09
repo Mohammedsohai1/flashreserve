@@ -1,3 +1,4 @@
+
 package com.example.flashreserve.service;
 
 import com.example.flashreserve.dto.CreateOrderRequest;
@@ -19,9 +20,7 @@ import java.util.concurrent.Future;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 @SpringBootTest
-class
-
-IdempotencyConcurrencyTest {
+class IdempotencyConcurrencyTest {
 
     @Autowired
     private OrderService orderService;
@@ -33,12 +32,18 @@ IdempotencyConcurrencyTest {
 
     @BeforeEach
     void setup() {
+
+        // Delete dependent records before deleting their parent records.
+        jdbcTemplate.update("DELETE FROM payments");
         jdbcTemplate.update("DELETE FROM idempotency_keys");
         jdbcTemplate.update("DELETE FROM order_items");
         jdbcTemplate.update("DELETE FROM orders");
+
+        // Inventory references products, so delete inventory first.
         jdbcTemplate.update("DELETE FROM inventory");
         jdbcTemplate.update("DELETE FROM products");
 
+        // Create a fresh product for this test.
         productId = jdbcTemplate.queryForObject(
                 """
                 INSERT INTO products (name, price, created_at)
@@ -50,6 +55,7 @@ IdempotencyConcurrencyTest {
                 new BigDecimal("100.00")
         );
 
+        // Give the product 10 units of inventory.
         jdbcTemplate.update(
                 """
                 INSERT INTO inventory (product_id, available_quantity)
@@ -70,14 +76,23 @@ IdempotencyConcurrencyTest {
                 Executors.newFixedThreadPool(numberOfRequests);
 
         CountDownLatch startLatch = new CountDownLatch(1);
+
         List<Future<OrderResponse>> results = new ArrayList<>();
 
         CreateOrderRequest request =
-                new CreateOrderRequest(productId, 2,"test@example.com");
+                new CreateOrderRequest(
+                        productId,
+                        2,
+                        "test@example.com"
+                );
 
         try {
+            // Submit 10 requests that will start at nearly the same time.
             for (int i = 0; i < numberOfRequests; i++) {
+
                 Future<OrderResponse> result = executor.submit(() -> {
+
+                    // Wait until all worker threads are ready.
                     startLatch.await();
 
                     return orderService.createOrder(
@@ -89,33 +104,37 @@ IdempotencyConcurrencyTest {
                 results.add(result);
             }
 
+            // Release all worker threads simultaneously.
             startLatch.countDown();
 
             List<OrderResponse> responses = new ArrayList<>();
 
-            // Every request must succeed.
+            // Every request must complete successfully.
             for (Future<OrderResponse> result : results) {
                 responses.add(result.get());
             }
 
             assertEquals(numberOfRequests, responses.size());
 
-            // All requests must return the same order.
+            // Every request must return the same order.
             Long firstOrderId = responses.get(0).id();
 
             for (OrderResponse response : responses) {
                 assertEquals(firstOrderId, response.id());
             }
+
         } finally {
-            // Always stop worker threads, even if an assertion fails.
+            // Always stop worker threads, even if the test fails.
             executor.shutdownNow();
         }
 
+        // Verify that only one order was created.
         Integer orderCount = jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM orders",
                 Integer.class
         );
 
+        // Verify that inventory was reduced only once.
         Integer inventoryQuantity = jdbcTemplate.queryForObject(
                 """
                 SELECT available_quantity

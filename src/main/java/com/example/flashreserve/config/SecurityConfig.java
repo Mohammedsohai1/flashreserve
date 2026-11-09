@@ -1,3 +1,4 @@
+
 package com.example.flashreserve.config;
 
 import com.example.flashreserve.dto.ErrorResponse;
@@ -69,19 +70,24 @@ public class SecurityConfig {
     @Bean
     AuthenticationManager authenticationManager(
             AuthenticationConfiguration configuration) throws Exception {
+
         return configuration.getAuthenticationManager();
     }
 
     @Bean
     JwtAuthenticationConverter jwtAuthenticationConverter() {
+
         JwtGrantedAuthoritiesConverter authoritiesConverter =
                 new JwtGrantedAuthoritiesConverter();
 
         authoritiesConverter.setAuthoritiesClaimName("roles");
         authoritiesConverter.setAuthorityPrefix("");
 
-        JwtAuthenticationConverter converter = new JwtAuthenticationConverter();
+        JwtAuthenticationConverter converter =
+                new JwtAuthenticationConverter();
+
         converter.setJwtGrantedAuthoritiesConverter(authoritiesConverter);
+
         return converter;
     }
 
@@ -91,10 +97,13 @@ public class SecurityConfig {
             JwtAuthenticationConverter jwtAuthenticationConverter,
             CustomUserDetailsService userDetailsService,
             ObjectMapper objectMapper) throws Exception {
+
         AuthenticationEntryPoint authenticationEntryPoint =
                 (request, response, exception) -> {
+
                     response.setStatus(HttpStatus.UNAUTHORIZED.value());
-                    response.setContentType(MediaType.APPLICATION_JSON_VALUE);
+                    response.setContentType(
+                            MediaType.APPLICATION_JSON_VALUE);
 
                     objectMapper.writeValue(
                             response.getOutputStream(),
@@ -107,8 +116,10 @@ public class SecurityConfig {
 
         AccessDeniedHandler accessDeniedHandler =
                 (request, response, exception) -> {
+
                     response.setStatus(HttpStatus.FORBIDDEN.value());
-                    response.setContentType(MediaType.APPLICATION_JSON_VALUE);
+                    response.setContentType(
+                            MediaType.APPLICATION_JSON_VALUE);
 
                     objectMapper.writeValue(
                             response.getOutputStream(),
@@ -121,72 +132,94 @@ public class SecurityConfig {
 
         http
                 .csrf(AbstractHttpConfigurer::disable)
+
                 .formLogin(AbstractHttpConfigurer::disable)
+
                 .httpBasic(AbstractHttpConfigurer::disable)
+
                 .sessionManagement(session -> session
-                        .sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+                        .sessionCreationPolicy(
+                                SessionCreationPolicy.STATELESS))
+
                 .userDetailsService(userDetailsService)
+
                 .exceptionHandling(exceptions -> exceptions
                         .authenticationEntryPoint(authenticationEntryPoint)
                         .accessDeniedHandler(accessDeniedHandler)
                 )
+
                 .authorizeHttpRequests(auth -> auth
 
-                        // Registration and login are public
+                        // Public authentication endpoints
                         .requestMatchers("/auth/**").permitAll()
-                        .requestMatchers(HttpMethod.GET, "/checkout.html").permitAll()
 
-                        // Razorpay webhook is authenticated by its signature
+                        // Public checkout page
                         .requestMatchers(
-                                org.springframework.http.HttpMethod.POST,
+                                HttpMethod.GET,
+                                "/checkout.html"
+                        ).permitAll()
+
+                        // Razorpay webhook: signature verification is handled separately
+                        .requestMatchers(
+                                HttpMethod.POST,
                                 "/payments/webhook"
+                        ).permitAll()
+
+                        // Swagger and OpenAPI documentation
+                        .requestMatchers(
+                                "/swagger-ui.html",
+                                "/swagger-ui/**",
+                                "/v3/api-docs",
+                                "/v3/api-docs/**"
                         ).permitAll()
 
                         // Public product browsing
                         .requestMatchers(
-                                org.springframework.http.HttpMethod.GET,
+                                HttpMethod.GET,
                                 "/products",
                                 "/products/**"
                         ).permitAll()
 
                         // Only ADMIN can create products
                         .requestMatchers(
-                                org.springframework.http.HttpMethod.POST,
+                                HttpMethod.POST,
                                 "/products"
                         ).hasRole("ADMIN")
 
-                        // Only ADMIN can modify or delete products
+                        // Only ADMIN can update products
                         .requestMatchers(
-                                org.springframework.http.HttpMethod.PUT,
-                                "/products/**"
-                        ).hasRole("ADMIN")
-                        .requestMatchers(
-                                org.springframework.http.HttpMethod.PATCH,
-                                "/products/**"
-                        ).hasRole("ADMIN")
-                        .requestMatchers(
-                                org.springframework.http.HttpMethod.DELETE,
+                                HttpMethod.PUT,
                                 "/products/**"
                         ).hasRole("ADMIN")
 
-                        // Inventory reservation requires authentication
                         .requestMatchers(
-                                org.springframework.http.HttpMethod.POST,
-                                "/products/*/reserve"
-                        ).authenticated()
+                                HttpMethod.PATCH,
+                                "/products/**"
+                        ).hasRole("ADMIN")
+
+                        // Only ADMIN can delete products
+                        .requestMatchers(
+                                HttpMethod.DELETE,
+                                "/products/**"
+                        ).hasRole("ADMIN")
 
                         // Only ADMIN can view all orders
                         .requestMatchers(
-                                org.springframework.http.HttpMethod.GET,
+                                HttpMethod.GET,
                                 "/orders"
                         ).hasRole("ADMIN")
 
-                        // Customer order and payment operations require authentication
-                        .requestMatchers("/orders/**", "/payments/**").authenticated()
+                        // Customer order and payment operations
+                        // require authentication
+                        .requestMatchers(
+                                "/orders/**",
+                                "/payments/**"
+                        ).authenticated()
 
                         // Reject anything not explicitly allowed
                         .anyRequest().denyAll()
                 )
+
                 .oauth2ResourceServer(oauth2 -> oauth2
                         .authenticationEntryPoint(authenticationEntryPoint)
                         .accessDeniedHandler(accessDeniedHandler)
